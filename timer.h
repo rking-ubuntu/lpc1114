@@ -1,10 +1,10 @@
 #ifndef __TIME_H_
 #define __TIME_H_
+#include "lpc11xx.h"
 
-void T16B0_init(void);
-void T16B0_delay_ms(uint16_t ms); 
-void T16B0_delay_us(uint16_t us);
-void T16B0_cnt_init(void);
-void T16B0_CAP_Init(void);
+void myDelay(uint32_t ulTime);
 
+void TIMER16_0_Init(uint16_t uIMsTime);
+
+void TIMER16_1_Init(uint16_t MsTime);
 #endif

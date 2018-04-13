@@ -1,0 +1,5 @@
+--cpu Cortex-M0 "startup_lpc11xx.o" "blinky.o" 
+--strict --scatter "proj01.sct" 
+--summary_stderr --info summarysizes --map --xref --callgraph --symbols 
+--info sizes --info totals --info unused --info veneers 
+ --list ".\proj01.map" -o proj01.axf

@@ -1,0 +1,214 @@
+要想正确地执行2440的外部中断，一般需要完成两个部分内容：中断初始化和中断处理函数。
+
+    在具体执行中断之前，要初始化好要用的中断。2440的外部中断引脚EINT与通用IO引脚F和G复用，要想使用中断功能，就要把相应的引脚配置成中断模式，如我们想把端口F0设置成外部中断，而其他引脚功能不变，则GPFCON=(GPFCON & ~0x3) | 0x2。配置完引脚后，还需要配置具体的中断功能。我们要打开某一中断的屏蔽，这样才能响应该中断，相对应的寄存器为INTMSK；还要设置外部中断的触发方式，如低电平、高电平、上升沿、下降沿等，相对应的寄存器为EXTINTn。另外由于EINT4到EINT7共用一个中断向量，EINT8到EINT23也共用一个中断向量，而INTMSK只负责总的中断向量的屏蔽，要具体打开某一具体的中断屏蔽，还需要设置EINTMASK。上面介绍的是最基本的初始化，当然还有一些其他的配置，如当需要用到快速中断时，要使用INTMOD，当需要配置中断优先级时，要使用PRIORITY等。
+
+    中断处理函数负责执行具体的中断指令，除此以外还需要把SRCPND和INTPND中的相应的位清零（通过置1来清零），因为当中断发生时，2440会自动把这两个寄存器中相对应的位置1，以表示某一中断发生，如果不在中断处理函数内把它们清零，系统会一直执行该中断函数。另外还是由于前面介绍过的，有一些中断是共用一个中断向量的，而一个中断向量只能有一个中断执行函数，因此具体是哪个外部中断，还需要EINTPEND来判断，并同样还要通过置1的方式把相应的位清零。一般来说，使用__irq这个关键词来定义中断处理函数，这样系统会为我们自动保存一些必要的变量，并能够在中断处理函数执行完后正确地返回。还需要注意的是，中断处理函数不能有返回值，也不能传递任何参数。
+
+    为了把这个中断处理函数与在2440启动文件中定义的中断向量表相对应上，需要先定义中断入口地址变量，该中断入口地址必须与中断向量表中的地址一致，然后把该中断处理函数的首地址传递给该变量，即中断入口地址。
+
+    下面就是一个外部中断的实例。开发板上一共有四个按键，分别连到了EINT0，EINT1，EINT2和EINT4，我们让这四个按键分别控制连接在B5~B8引脚上的四个LED：按一下键则LED亮，再按一下则灭：
+
+ 
+
+#define _ISR_STARTADDRESS 0x33ffff00
+
+ 
+
+#define U32 unsigned int
+
+ 
+
+#define pISR_EINT0            (*(unsigned *)(_ISR_STARTADDRESS+0x20))
+
+#define pISR_EINT1            (*(unsigned *)(_ISR_STARTADDRESS+0x24))
+
+#define pISR_EINT2            (*(unsigned *)(_ISR_STARTADDRESS+0x28))
+
+#define pISR_EINT4_7  (*(unsigned *)(_ISR_STARTADDRESS+0x30))
+
+ 
+
+#define rSRCPND     (*(volatile unsigned *)0x4a000000)      //Interrupt request status
+
+#define rINTMSK     (*(volatile unsigned *)0x4a000008)       //Interrupt mask control
+
+#define rINTPND     (*(volatile unsigned *)0x4a000010)       //Interrupt request status
+
+ 
+
+#define rGPBCON    (*(volatile unsigned *)0x56000010) //Port B control
+
+#define rGPBDAT    (*(volatile unsigned *)0x56000014) //Port B data
+
+#define rGPBUP     (*(volatile unsigned *)0x56000018)  //Pull-up control B
+
+ 
+
+#define rGPFCON    (*(volatile unsigned *)0x56000050) //Port F control
+
+ 
+
+#define rEXTINT0   (*(volatile unsigned *)0x56000088)  //External interrupt control register 0
+
+#define rEINTMASK  (*(volatile unsigned *)0x560000a4) //External interrupt mask
+
+#define rEINTPEND  (*(volatile unsigned *)0x560000a8) //External interrupt pending
+
+ 
+
+static void __irq Key1_ISR(void)   //EINT1
+
+{
+
+       int led;
+
+       rSRCPND = rSRCPND | (0x1<<1);
+
+       rINTPND = rINTPND | (0x1<<1);
+
+       led = rGPBDAT & (0x1<<5);
+
+       if (led ==0)
+
+              rGPBDAT = rGPBDAT | (0x1<<5);
+
+       else
+
+              rGPBDAT = rGPBDAT & ~(0x1<<5);
+
+}
+
+ 
+
+static void __irq Key2_ISR(void)   //EINT4
+
+{
+
+       int led;
+
+       rSRCPND = rSRCPND | (0x1<<4);
+
+       rINTPND = rINTPND | (0x1<<4);
+
+       if(rEINTPEND&(1<<4))
+
+       {
+
+              rEINTPEND = rEINTPEND | (0x1<<4);
+
+              led = rGPBDAT & (0x1<<6);
+
+              if (led ==0)
+
+                     rGPBDAT = rGPBDAT | (0x1<<6);
+
+              else
+
+                     rGPBDAT = rGPBDAT & ~(0x1<<6);
+
+       }
+
+}
+
+ 
+
+static void __irq Key3_ISR(void)   //EINT2
+
+{
+
+       int led;
+
+       rSRCPND = rSRCPND | (0x1<<2);
+
+       rINTPND = rINTPND | (0x1<<2);
+
+       led = rGPBDAT & (0x1<<7);
+
+       if (led ==0)
+
+              rGPBDAT = rGPBDAT | (0x1<<7);
+
+       else
+
+              rGPBDAT = rGPBDAT & ~(0x1<<7);
+
+}
+
+ 
+
+void __irq Key4_ISR(void)   //EINT0
+
+{
+
+       int led;
+
+       rSRCPND = rSRCPND | 0x1;
+
+       rINTPND = rINTPND | 0x1;
+
+       led = rGPBDAT & (0x1<<8);
+
+       if (led ==0)
+
+              rGPBDAT = rGPBDAT | (0x1<<8);
+
+       else
+
+              rGPBDAT = rGPBDAT & ~(0x1<<8);
+
+}
+
+ 
+
+void Main(void)
+
+{
+
+       int light;
+
+      
+
+       rGPBCON = 0x015550;
+
+       rGPBUP = 0x7ff;
+
+       rGPFCON = 0xaaaa;
+
+   
+
+       rSRCPND = 0x17;
+
+       rINTMSK = ~0x17;
+
+       rINTPND =0x17;
+
+       rEINTPEND = (1<<4);
+
+       rEINTMASK = ~(1<<4);
+
+       rEXTINT0 = 0x20222;
+
+   
+
+       light = 0x0;
+
+       rGPBDAT = ~light;
+
+       
+
+       pISR_EINT0 = (U32)Key4_ISR;
+
+       pISR_EINT1 = (U32)Key1_ISR;
+
+       pISR_EINT2 = (U32)Key3_ISR;
+
+       pISR_EINT4_7 = (U32)Key2_ISR;
+
+      
+
+       while(1)
+
+              ;     
+
+}
+
